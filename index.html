@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Face Swap Studio (Kualitas Ditingkatkan)</title>
+    <title>Face Swap Studio</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -216,10 +216,8 @@
     backButtons.forEach(button => button.addEventListener('click', resetApp));
     
     function resetApp() {
-        singleModeArea.classList.add('hidden');
-        multiModeArea.classList.add('hidden');
-        multiUploadArea.classList.add('hidden');
-        resultArea.classList.add('hidden');
+        singleModeArea.classList.add('hidden'); multiModeArea.classList.add('hidden');
+        multiUploadArea.classList.add('hidden'); resultArea.classList.add('hidden');
         modeSelectionArea.classList.remove('hidden');
         subtitle.textContent = 'Toolkit untuk bertukar wajah.';
         currentMode = null; sourceImageSingle = null; targetImageSingle = null;
@@ -321,13 +319,9 @@
             const reader = new FileReader();
             reader.onload = (re) => {
                 const img = new Image();
-                img.onload = () => {
-                    imageSetter(img);
-                    previewEl.src = re.target.result;
-                    previewEl.classList.remove('hidden');
-                    placeholderEl.classList.add('hidden');
-                    if(validationCallback) validationCallback();
-                };
+                img.onload = () => { imageSetter(img); previewEl.src = re.target.result;
+                    previewEl.classList.remove('hidden'); placeholderEl.classList.add('hidden');
+                    if(validationCallback) validationCallback(); };
                 img.src = re.target.result;
             };
             reader.readAsDataURL(event.target.files[0]);
@@ -352,21 +346,31 @@
     // NEW & IMPROVED FACE SWAP FUNCTION
     // --- --- --- --- --- --- --- --- --- --- --- ---
     async function swapSingleFace(ctx, sourceFace, targetFace, sourceImg, targetImg) {
-        // Step 1: Create a masked canvas of the source face
         const sourceLandmarks = sourceFace.landmarks;
-        const sourceFaceContour = sourceLandmarks.getFaceContour();
         const { x, y, width, height } = sourceFace.detection.box;
 
+        // Step 1: Create a masked canvas of the source face
         const sourceFaceCanvas = document.createElement('canvas');
-        sourceFaceCanvas.width = width; sourceFaceCanvas.height = height;
+        sourceFaceCanvas.width = width;
+        sourceFaceCanvas.height = height;
         const sourceFaceCtx = sourceFaceCanvas.getContext('2d');
         sourceFaceCtx.drawImage(sourceImg, x, y, width, height, 0, 0, width, height);
         
+        // BUG FIX: The mask creation logic is now robust
+        const jawOutline = sourceLandmarks.getJawOutline();
         sourceFaceCtx.globalCompositeOperation = 'destination-in';
         sourceFaceCtx.fillStyle = 'white';
         sourceFaceCtx.beginPath();
-        sourceFaceCtx.moveTo(sourceFaceContour[0].x - x, sourceFaceContour[0].y - y);
-        sourceFaceContour.forEach(p => sourceFaceCtx.lineTo(p.x - x, p.y - y));
+        sourceFaceCtx.moveTo(jawOutline[0].x - x, jawOutline[0].y - y);
+        for(let i = 1; i < jawOutline.length; i++) {
+            sourceFaceCtx.lineTo(jawOutline[i].x - x, jawOutline[i].y - y);
+        }
+        // Create a curve over the forehead to close the mask
+        const foreheadTopPoint = {
+             x: sourceLandmarks.getNose()[0].x,
+             y: Math.min(...sourceLandmarks.getLeftEyeBrow().map(p=>p.y), ...sourceLandmarks.getRightEyeBrow().map(p=>p.y)) - height * 0.1
+        };
+        sourceFaceCtx.quadraticCurveTo(foreheadTopPoint.x - x, foreheadTopPoint.y - y, jawOutline[0].x - x, jawOutline[0].y - y);
         sourceFaceCtx.closePath();
         sourceFaceCtx.fill();
 
@@ -374,27 +378,26 @@
         const targetLandmarks = targetFace.landmarks;
         const targetBox = targetFace.detection.box;
         const targetSkinArea = {
-            x: targetBox.x + targetBox.width * 0.2,
-            y: targetBox.y + targetBox.height * 0.7, // Check area on the cheek
-            width: targetBox.width * 0.2,
-            height: targetBox.height * 0.2,
+            x: targetBox.x + targetBox.width * 0.1,
+            y: targetBox.y + targetBox.height * 0.6,
+            width: targetBox.width * 0.3,
+            height: targetBox.height * 0.3,
         };
         const tempTargetCanvas = document.createElement('canvas');
         tempTargetCanvas.width = targetImg.width; tempTargetCanvas.height = targetImg.height;
-        const tempTargetCtx = tempTargetCanvas.getContext('2d');
-        tempTargetCtx.drawImage(targetImg, 0, 0);
-        const targetColorData = tempTargetCtx.getImageData(targetSkinArea.x, targetSkinArea.y, targetSkinArea.width, targetSkinArea.height).data;
+        tempTargetCanvas.getContext('2d').drawImage(targetImg, 0, 0);
+        const targetColorData = tempTargetCanvas.getContext('2d').getImageData(targetSkinArea.x, targetSkinArea.y, targetSkinArea.width, targetSkinArea.height).data;
         
         let r = 0, g = 0, b = 0;
         for (let i = 0; i < targetColorData.length; i += 4) {
             r += targetColorData[i]; g += targetColorData[i+1]; b += targetColorData[i+2];
         }
-        const pixelCount = targetColorData.length / 4;
+        const pixelCount = Math.max(1, targetColorData.length / 4);
         const avgTargetColor = { r: r / pixelCount, g: g / pixelCount, b: b / pixelCount };
         
         // Step 3: Apply color correction to the source face canvas
         sourceFaceCtx.globalCompositeOperation = 'source-atop';
-        sourceFaceCtx.fillStyle = `rgba(${avgTargetColor.r}, ${avgTargetColor.g}, ${avgTargetColor.b}, 0.5)`; // 50% opacity blend
+        sourceFaceCtx.fillStyle = `rgba(${avgTargetColor.r}, ${avgTargetColor.g}, ${avgTargetColor.b}, 0.55)`; // 55% opacity blend
         sourceFaceCtx.fillRect(0, 0, width, height);
 
         // Step 4: Calculate Affine Transform for precise alignment
@@ -402,18 +405,18 @@
         const targetPoints = [targetLandmarks.getLeftEye()[0], targetLandmarks.getRightEye()[3], targetLandmarks.getNose()[3]];
         const transform = getAffineTransform(sourcePoints, targetPoints);
         
+        if (!transform) {
+            console.warn("Could not compute affine transform. Swap may be inaccurate.");
+            return; 
+        }
+
         // Step 5: Draw the transformed, color-corrected, and feathered face onto the main canvas
         ctx.save();
         ctx.setTransform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f);
-        
-        // Apply feathering by drawing with a blur filter first
-        ctx.filter = 'blur(5px)';
+        ctx.filter = 'blur(4px)';
         ctx.drawImage(sourceFaceCanvas, 0, 0);
-        
-        // Draw the main face on top, sharp
         ctx.filter = 'none';
         ctx.drawImage(sourceFaceCanvas, 0, 0);
-
         ctx.restore();
     }
     
@@ -424,41 +427,40 @@
             A.push([from[i].x, from[i].y, 1, 0, 0, 0]);
             A.push([0, 0, 0, from[i].x, from[i].y, 1]);
         }
-
         const b = [];
-        for (let i = 0; i < to.length; i++) {
-            b.push(to[i].x);
-            b.push(to[i].y);
+        for (let i = 0; i < to.length; i++) { b.push(to[i].x); b.push(to[i].y); }
+        try {
+            const x = solve(A, b);
+            return { a: x[0], b: x[3], c: x[1], d: x[4], e: x[2], f: x[5] };
+        } catch (e) {
+            console.error("Error solving matrix:", e);
+            return null;
         }
-
-        // Solve Ax=b using pseudoinverse
-        const A_T = A[0].map((_, c) => A.map(r => r[c])); // Transpose A
-        const A_T_A = A_T.map(row => A[0].map((_, c) => row.reduce((sum, val, r) => sum + val * A[r][c], 0)));
-        const A_T_A_inv = invertMatrix(A_T_A);
-        const A_plus = A_T_A_inv.map(row => A_T[0].map((_, c) => row.reduce((sum, val, r) => sum + val * A_T[r][c], 0)));
-        const x = A_plus.map(row => row.reduce((sum, val, i) => sum + val * b[i], 0));
-
-        return { a: x[0], b: x[3], c: x[1], d: x[4], e: x[2], f: x[5] };
-    }
-
-    // Helper to invert a 3x3 matrix - needed for affine transform
-    function invertMatrix(M) {
-        const det = M[0][0]*(M[1][1]*M[2][2] - M[2][1]*M[1][2]) - M[0][1]*(M[1][0]*M[2][2] - M[1][2]*M[2][0]) + M[0][2]*(M[1][0]*M[2][1] - M[1][1]*M[2][0]);
-        if (det === 0) return null; // Not invertible
-        const invDet = 1 / det;
-        return [
-            [(M[1][1]*M[2][2] - M[2][1]*M[1][2])*invDet, (M[0][2]*M[2][1] - M[0][1]*M[2][2])*invDet, (M[0][1]*M[1][2] - M[0][2]*M[1][1])*invDet],
-            [(M[1][2]*M[2][0] - M[1][0]*M[2][2])*invDet, (M[0][0]*M[2][2] - M[0][2]*M[2][0])*invDet, (M[1][0]*M[0][2] - M[0][0]*M[1][2])*invDet],
-            [(M[1][0]*M[2][1] - M[2][0]*M[1][1])*invDet, (M[2][0]*M[0][1] - M[0][0]*M[2][1])*invDet, (M[0][0]*M[1][1] - M[1][0]*M[0][1])*invDet]
-        ];
     }
     
-    function showResult() {
-        resultArea.classList.remove('hidden');
-        downloadBtn.href = outputCanvas.toDataURL('image/png');
-        downloadBtn.download = 'hasil-swap-studio.png';
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    // Minimal linear equation solver using pseudo-inverse (A'A)^-1 * A'b
+    function solve(A, b) {
+        const T = (M) => M[0].map((_, c) => M.map(r => r[c])); // Transpose
+        const dot = (X, Y) => X.map((r, i) => Y[i].reduce ? r.reduce((s, v, j) => s + v * Y[j], 0) : r.reduce((s, v, j) => s + v * Y[i][j], 0));
+        const mult = (M, v) => M.map(r => r.reduce((s, val, i) => s + val * v[i], 0));
+        const inv = (M) => {
+            const det = M[0][0]*(M[1][1]*M[2][2] - M[2][1]*M[1][2]) - M[0][1]*(M[1][0]*M[2][2] - M[1][2]*M[2][0]) + M[0][2]*(M[1][0]*M[2][1] - M[1][1]*M[2][0]);
+            if (det === 0) throw new Error("Matrix not invertible");
+            const id = 1 / det;
+            return [
+                [(M[1][1]*M[2][2] - M[2][1]*M[1][2])*id, (M[0][2]*M[2][1] - M[0][1]*M[2][2])*id, (M[0][1]*M[1][2] - M[0][2]*M[1][1])*id],
+                [(M[1][2]*M[2][0] - M[1][0]*M[2][2])*id, (M[0][0]*M[2][2] - M[0][2]*M[2][0])*id, (M[1][0]*M[0][2] - M[0][0]*M[1][2])*id],
+                [(M[1][0]*M[2][1] - M[2][0]*M[1][1])*id, (M[2][0]*M[0][1] - M[0][0]*M[2][1])*id, (M[0][0]*M[1][1] - M[1][0]*M[0][1])*id]
+            ];
+        };
+        const AT = T(A.map(row => row.slice(0, 3))); // Use only 3x3 for square matrix
+        const ATA = dot(AT, A.map(row => row.slice(0, 3)));
+        const ATA_inv = inv(ATA);
+        const A_plus = dot(ATA_inv, AT);
+        return mult(T(A_plus), b);
     }
+    
+    function showResult() { resultArea.classList.remove('hidden'); downloadBtn.href = outputCanvas.toDataURL('image/png'); downloadBtn.download = 'hasil-swap-studio.png'; window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }
     function showLoading(message) { loadingText.textContent = message; loadingScreen.classList.remove('hidden'); loadingScreen.classList.add('flex'); }
     function hideLoading() { loadingScreen.classList.add('hidden'); loadingScreen.classList.remove('flex'); }
     function showError(message) { errorMessage.textContent = "Error: " + message; errorMessage.classList.remove('hidden'); }
