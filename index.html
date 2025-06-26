@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Swap Studio</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body { font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
+        .loader {
+            border: 5px solid #f3f3f3; border-top: 5px solid #3498db;
+            border-radius: 50%; width: 50px; height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        input[type="file"] { display: none; }
+        .custom-file-upload {
+            border: 1px solid #ccc; display: inline-block; padding: 8px 12px;
+            cursor: pointer; background-color: #f9f9f9; border-radius: 0.5rem;
+            transition: all 0.2s;
+        }
+        .custom-file-upload:hover { background-color: #e9e9e9; }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .mode-button {
+            transition: all 0.3s ease;
+            transform-style: preserve-3d;
+        }
+        .mode-button:hover {
+            transform: translateY(-5px) scale(1.03);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <!-- Layar Loading Global -->
+    <div id="loading-screen" class="fixed inset-0 bg-white bg-opacity-90 flex-col items-center justify-center z-50 transition-opacity duration-300 hidden">
+        <div class="loader"></div>
+        <p id="loading-text" class="mt-4 text-gray-700 text-lg">Memuat...</p>
+    </div>
+
+    <main id="app-content" class="container mx-auto max-w-6xl bg-white rounded-xl shadow-2xl p-6 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800">Face Swap Studio</h1>
+            <p id="subtitle" class="text-gray-500 mt-2">Toolkit untuk bertukar wajah.</p>
+        </header>
+        
+        <!-- Pesan Error Global -->
+        <div id="error-message" class="hidden text-center bg-red-100 text-red-700 p-3 rounded-lg mb-6"></div>
+
+        <!-- Langkah 1: Pilihan Mode -->
+        <div id="mode-selection-area" class="fade-in">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-6 text-center">Pilih Mode Swap</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
+                <!-- Tombol Mode: Swap 1 Wajah -->
+                <button data-mode="single_one" class="mode-button bg-white p-6 rounded-lg shadow-md border border-gray-200 text-center">
+                    <div class="text-5xl mb-3">👤→👤</div>
+                    <h3 class="text-xl font-bold text-indigo-600">Swap 1 Wajah</h3>
+                    <p class="text-gray-500 mt-1 text-sm">Ganti satu wajah target dengan satu wajah sumber.</p>
+                </button>
+                <!-- Tombol Mode: Multi Swap -->
+                <button data-mode="multi" class="mode-button bg-white p-6 rounded-lg shadow-md border border-gray-200 text-center">
+                     <div class="text-5xl mb-3">👥→👥</div>
+                    <h3 class="text-xl font-bold text-teal-600">Multi-Swap</h3>
+                    <p class="text-gray-500 mt-1 text-sm">Ganti setiap wajah target dengan sumber yang berbeda.</p>
+                </button>
+            </div>
+        </div>
+
+        <!-- Area untuk Mode 'Single' (1 ke 1) -->
+        <div id="single-mode-area" class="hidden fade-in">
+             <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                <!-- Kolom Gambar Sumber -->
+                <div class="flex flex-col items-center">
+                    <h2 class="text-xl font-semibold text-gray-700 mb-3">Wajah Sumber</h2>
+                    <div class="w-full h-64 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden border-2 border-dashed">
+                        <img id="source-preview-single" class="w-full h-full object-cover hidden" alt="Pratinjau Sumber">
+                        <span id="source-placeholder-single" class="text-gray-500">Pilih gambar sumber</span>
+                    </div>
+                    <input type="file" id="source-input-single" accept="image/*">
+                    <label for="source-input-single" class="custom-file-upload mt-4 bg-blue-500 text-white font-semibold hover:bg-blue-600">Pilih Gambar</label>
+                </div>
+                <!-- Kolom Gambar Target -->
+                <div class="flex flex-col items-center">
+                    <h2 class="text-xl font-semibold text-gray-700 mb-3">Gambar Target</h2>
+                    <div class="w-full h-64 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden border-2 border-dashed">
+                        <img id="target-preview-single" class="w-full h-full object-cover hidden" alt="Pratinjau Target">
+                         <span id="target-placeholder-single" class="text-gray-500">Pilih gambar target</span>
+                    </div>
+                    <input type="file" id="target-input-single" accept="image/*">
+                    <label for="target-input-single" class="custom-file-upload mt-4 bg-green-500 text-white font-semibold hover:bg-green-600">Pilih Gambar</label>
+                </div>
+            </div>
+            <div class="text-center">
+                <button id="perform-single-swap-btn" class="bg-indigo-600 text-white font-bold py-3 px-8 rounded-lg shadow-md hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed">Lakukan Swap</button>
+                <button class="back-button ml-4 bg-gray-500 text-white font-bold py-3 px-8 rounded-lg shadow-md hover:bg-gray-600">Kembali</button>
+            </div>
+        </div>
+        
+        <!-- Area untuk Mode 'Multi' -->
+        <div id="multi-mode-area" class="hidden fade-in">
+            <!-- Tampilan Gambar Target -->
+            <div class="mb-8">
+                <h2 class="text-2xl font-semibold text-gray-700 mb-4 text-center">Gambar Target & Wajah Terdeteksi</h2>
+                <div class="flex justify-center bg-gray-100 p-4 rounded-lg">
+                    <canvas id="target-display-canvas-multi" class="max-w-full h-auto rounded-lg shadow-md"></canvas>
+                </div>
+            </div>
+             <!-- Area Upload Sumber Dinamis -->
+            <div>
+                <h2 class="text-2xl font-semibold text-gray-700 mb-4 text-center">Unggah Wajah Sumber</h2>
+                <p id="source-face-count-multi" class="text-center text-gray-600 mb-6"></p>
+                <div id="source-faces-container-multi" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+            </div>
+            <div class="text-center mt-10">
+                <button id="perform-multi-swap-btn" class="bg-teal-600 text-white font-bold py-4 px-10 text-lg rounded-lg shadow-xl hover:bg-teal-700 disabled:bg-gray-400">Lakukan Multi-Swap</button>
+                <button class="back-button ml-4 bg-gray-500 text-white font-bold py-4 px-10 text-lg rounded-lg shadow-xl hover:bg-gray-600">Kembali</button>
+            </div>
+        </div>
+        
+        <!-- Area Awal Multi-Mode (Upload Target) -->
+        <div id="multi-upload-area" class="hidden fade-in text-center p-8 border-4 border-dashed border-gray-300 rounded-xl">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Unggah Gambar Target</h2>
+            <p class="text-gray-500 mb-6">Pilih gambar utama yang berisi wajah-wajah yang ingin Anda ganti.</p>
+            <input type="file" id="target-input-multi" accept="image/*">
+            <label for="target-input-multi" class="custom-file-upload bg-blue-500 text-white font-semibold hover:bg-blue-600 text-lg py-3 px-6">Pilih Gambar</label>
+            <button class="back-button mt-4 md:mt-0 md:ml-4 bg-gray-500 text-white font-bold py-3 px-8 rounded-lg hover:bg-gray-600">Kembali</button>
+        </div>
+
+
+        <!-- Area Hasil Universal -->
+        <div id="result-area" class="text-center hidden fade-in mt-10">
+             <h2 class="text-2xl font-semibold text-gray-700 mb-4">Hasil Akhir</h2>
+             <div class="flex justify-center p-4 bg-gray-100 rounded-lg">
+                <canvas id="output-canvas" class="max-w-full h-auto rounded-lg shadow-lg"></canvas>
+             </div>
+             <a id="download-btn" class="mt-6 inline-block bg-green-500 text-white font-bold py-3 px-8 rounded-lg shadow-md hover:bg-green-600">Unduh Hasil</a>
+        </div>
+    </main>
+
+    <!-- Template untuk slot multi-swap -->
+    <template id="source-face-template-multi">
+        <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm flex flex-col items-center text-center fade-in">
+            <h3 class="font-semibold text-gray-800 mb-2">Wajah Target #<span class="target-face-id"></span></h3>
+            <canvas class="target-face-crop w-24 h-24 rounded-full mb-3 border-2 border-blue-400"></canvas>
+            <div class="source-preview-container w-full h-40 bg-gray-200 rounded-lg flex items-center justify-center overflow-hidden border-2 border-dashed mb-3">
+                <img class="source-preview w-full h-full object-cover hidden" alt="Pratinjau Sumber">
+                <span class="source-placeholder text-gray-500 text-sm">Pilih wajah sumber</span>
+            </div>
+            <input type="file" class="source-input" accept="image/*">
+            <label class="custom-file-upload bg-green-500 text-white font-semibold hover:bg-green-600 w-full text-center">Pilih Sumber</label>
+        </div>
+    </template>
+    
+    <script>
+    // --- DOM Elements ---
+    const loadingScreen = document.getElementById('loading-screen');
+    const loadingText = document.getElementById('loading-text');
+    const appContent = document.getElementById('app-content');
+    const subtitle = document.getElementById('subtitle');
+    const errorMessage = document.getElementById('error-message');
+    const modeSelectionArea = document.getElementById('mode-selection-area');
+    const singleModeArea = document.getElementById('single-mode-area');
+    const multiModeArea = document.getElementById('multi-mode-area');
+    const multiUploadArea = document.getElementById('multi-upload-area');
+    const resultArea = document.getElementById('result-area');
+    const modeButtons = document.querySelectorAll('.mode-button');
+    const backButtons = document.querySelectorAll('.back-button');
+    const sourceInputSingle = document.getElementById('source-input-single');
+    const targetInputSingle = document.getElementById('target-input-single');
+    const sourcePreviewSingle = document.getElementById('source-preview-single');
+    const targetPreviewSingle = document.getElementById('target-preview-single');
+    const sourcePlaceholderSingle = document.getElementById('source-placeholder-single');
+    const targetPlaceholderSingle = document.getElementById('target-placeholder-single');
+    const performSingleSwapBtn = document.getElementById('perform-single-swap-btn');
+    const targetInputMulti = document.getElementById('target-input-multi');
+    const targetDisplayCanvasMulti = document.getElementById('target-display-canvas-multi');
+    const sourceFaceCountMulti = document.getElementById('source-face-count-multi');
+    const sourceFacesContainerMulti = document.getElementById('source-faces-container-multi');
+    const sourceFaceTemplateMulti = document.getElementById('source-face-template-multi');
+    const performMultiSwapBtn = document.getElementById('perform-multi-swap-btn');
+    const outputCanvas = document.getElementById('output-canvas');
+    const downloadBtn = document.getElementById('download-btn');
+
+    // --- State Variables ---
+    let currentMode = null;
+    let sourceImageSingle = null;
+    let targetImageSingle = null;
+    let targetImageMulti = null;
+    let targetDetectionsMulti = [];
+    let sourceFacesDataMulti = [];
+
+    // --- Inisialisasi ---
+    window.onload = async () => {
+        showLoading('Memuat model AI...');
+        try {
+            const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+            await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+            hideLoading();
+        } catch (error) {
+            loadingText.textContent = "Gagal memuat model. Silakan refresh halaman.";
+            console.error("Gagal memuat model AI:", error);
+        }
+    };
+    
+    // --- UI & Mode Management ---
+    modeButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            currentMode = button.dataset.mode;
+            modeSelectionArea.classList.add('hidden');
+            resultArea.classList.add('hidden');
+            hideError();
+            
+            if (currentMode === 'single_one') {
+                subtitle.textContent = 'Mode: Swap 1 Wajah';
+                singleModeArea.classList.remove('hidden');
+            } else if (currentMode === 'multi') {
+                subtitle.textContent = 'Mode: Multi-Swap';
+                multiUploadArea.classList.remove('hidden');
+            }
+        });
+    });
+
+    backButtons.forEach(button => button.addEventListener('click', resetApp));
+    
+    function resetApp() {
+        singleModeArea.classList.add('hidden');
+        multiModeArea.classList.add('hidden');
+        multiUploadArea.classList.add('hidden');
+        resultArea.classList.add('hidden');
+        modeSelectionArea.classList.remove('hidden');
+        subtitle.textContent = 'Toolkit untuk bertukar wajah.';
+        currentMode = null;
+        sourceImageSingle = null;
+        targetImageSingle = null;
+        targetImageMulti = null;
+        targetDetectionsMulti = [];
+        sourceFacesDataMulti = [];
+        sourceInputSingle.value = '';
+        targetInputSingle.value = '';
+        targetInputMulti.value = '';
+        sourcePreviewSingle.classList.add('hidden');
+        targetPreviewSingle.classList.add('hidden');
+        sourcePlaceholderSingle.classList.remove('hidden');
+        targetPlaceholderSingle.classList.remove('hidden');
+        sourceFacesContainerMulti.innerHTML = '';
+        performSingleSwapBtn.disabled = true;
+        performMultiSwapBtn.disabled = true;
+        hideError();
+    }
+    
+    // --- Logika Mode Single (1 ke 1) ---
+    sourceInputSingle.addEventListener('change', (e) => handleImageUpload(e, (img) => { sourceImageSingle = img; }, sourcePreviewSingle, sourcePlaceholderSingle, validateSingleMode));
+    targetInputSingle.addEventListener('change', (e) => handleImageUpload(e, (img) => { targetImageSingle = img; }, targetPreviewSingle, targetPlaceholderSingle, validateSingleMode));
+    
+    function validateSingleMode() {
+        performSingleSwapBtn.disabled = !(sourceImageSingle && targetImageSingle);
+    }
+    
+    performSingleSwapBtn.addEventListener('click', async () => {
+        showLoading('Mendeteksi wajah...');
+        try {
+            const sourceDetections = await faceapi.detectAllFaces(sourceImageSingle, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+            const targetDetections = await faceapi.detectAllFaces(targetImageSingle, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+
+            if (sourceDetections.length === 0) throw new Error("Wajah tidak ditemukan di gambar sumber.");
+            if (targetDetections.length === 0) throw new Error("Wajah tidak ditemukan di gambar target.");
+            
+            showLoading('Melakukan swap...');
+
+            const ctx = outputCanvas.getContext('2d');
+            outputCanvas.width = targetImageSingle.width;
+            outputCanvas.height = targetImageSingle.height;
+            ctx.drawImage(targetImageSingle, 0, 0);
+
+            // Ganti hanya wajah pertama yang terdeteksi di sumber dan target
+            await swapSingleFace(ctx, sourceDetections[0], targetDetections[0], sourceImageSingle);
+            
+            showResult();
+        } catch (err) {
+            showError(err.message);
+        } finally {
+            hideLoading();
+        }
+    });
+
+    // --- Logika Mode Multi ---
+    targetInputMulti.addEventListener('change', async (event) => {
+        if (!event.target.files || !event.target.files[0]) return;
+        const file = event.target.files[0];
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        showLoading('Mendeteksi wajah di gambar target...');
+
+        img.onload = async () => {
+            targetImageMulti = img;
+            const detections = await faceapi.detectAllFaces(targetImageMulti, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+            
+            if (detections.length === 0) {
+                showError("Tidak ada wajah yang terdeteksi. Coba gambar lain.");
+                hideLoading();
+                return;
+            }
+            
+            targetDetectionsMulti = detections.sort((a, b) => a.detection.box.x - b.detection.box.x);
+            
+            multiUploadArea.classList.add('hidden');
+            multiModeArea.classList.remove('hidden');
+            
+            await displayTargetWithDetections(targetImageMulti, targetDetectionsMulti, targetDisplayCanvasMulti);
+            renderSourceUploaders();
+            hideLoading();
+        };
+    });
+
+    function renderSourceUploaders() {
+        sourceFacesContainerMulti.innerHTML = '';
+        sourceFacesDataMulti = Array(targetDetectionsMulti.length).fill({ sourceImg: null });
+        sourceFaceCountMulti.textContent = `Ditemukan ${targetDetectionsMulti.length} wajah. Unggah sumber untuk masing-masing.`;
+
+        targetDetectionsMulti.forEach((detection, i) => {
+            const card = sourceFaceTemplateMulti.content.cloneNode(true);
+            card.querySelector('.target-face-id').textContent = i + 1;
+            
+            const cropCanvas = card.querySelector('.target-face-crop');
+            const { x, y, width, height } = detection.detection.box;
+            const padding = width * 0.4;
+            cropCanvas.width = width + padding;
+            cropCanvas.height = height + padding;
+            cropCanvas.getContext('2d').drawImage(targetImageMulti, x - padding/2, y - padding/2, width + padding, height + padding, 0, 0, cropCanvas.width, cropCanvas.height);
+            
+            const inputId = `source-input-multi-${i}`;
+            card.querySelector('input').id = inputId;
+            card.querySelector('label').setAttribute('for', inputId);
+
+            card.querySelector('input').addEventListener('change', (e) => {
+                 handleImageUpload(e, (img) => {
+                    sourceFacesDataMulti[i] = { sourceImg: img };
+                    checkAllMultiSourcesUploaded();
+                }, card.querySelector('.source-preview'), card.querySelector('.source-placeholder'));
+            });
+            sourceFacesContainerMulti.appendChild(card);
+        });
+    }
+
+    function checkAllMultiSourcesUploaded() {
+        performMultiSwapBtn.disabled = !sourceFacesDataMulti.every(item => item.sourceImg !== null);
+    }
+    
+    performMultiSwapBtn.addEventListener('click', async () => {
+        showLoading('Mempersiapkan multi-swap...');
+        try {
+            const ctx = outputCanvas.getContext('2d');
+            outputCanvas.width = targetImageMulti.width;
+            outputCanvas.height = targetImageMulti.height;
+            ctx.drawImage(targetImageMulti, 0, 0);
+
+            for (let i = 0; i < sourceFacesDataMulti.length; i++) {
+                showLoading(`Memproses swap untuk wajah #${i + 1}...`);
+                const sourceImg = sourceFacesDataMulti[i].sourceImg;
+                if (!sourceImg) continue;
+
+                const targetFace = targetDetectionsMulti[i];
+                const sourceDetections = await faceapi.detectAllFaces(sourceImg, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+                if (sourceDetections.length > 0) {
+                    await swapSingleFace(ctx, sourceDetections[0], targetFace, sourceImg);
+                }
+            }
+            showResult();
+        } catch(e) {
+            showError("Terjadi kesalahan saat multi-swap: " + e.message);
+        } finally {
+            hideLoading();
+        }
+    });
+
+    // --- Fungsi Inti & Utilitas ---
+    function handleImageUpload(event, imageSetter, previewEl, placeholderEl, validationCallback) {
+        if (event.target.files && event.target.files[0]) {
+            const reader = new FileReader();
+            reader.onload = (re) => {
+                const img = new Image();
+                img.onload = () => {
+                    imageSetter(img);
+                    previewEl.src = re.target.result;
+                    previewEl.classList.remove('hidden');
+                    placeholderEl.classList.add('hidden');
+                    if(validationCallback) validationCallback();
+                };
+                img.src = re.target.result;
+            };
+            reader.readAsDataURL(event.target.files[0]);
+        }
+    }
+
+    async function displayTargetWithDetections(image, detections, canvas) {
+        const ctx = canvas.getContext('2d');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        ctx.drawImage(image, 0, 0);
+        detections.forEach((detection, i) => {
+            const box = detection.detection.box;
+            ctx.strokeStyle = '#0ea5e9';
+            ctx.lineWidth = Math.max(2, image.width / 400);
+            ctx.strokeRect(box.x, box.y, box.width, box.height);
+            ctx.fillStyle = '#0ea5e9';
+            const fontSize = Math.max(16, image.width / 50);
+            ctx.font = `bold ${fontSize}px Arial`;
+            ctx.fillText((i + 1).toString(), box.x + 5, box.y + fontSize + 5);
+        });
+    }
+
+    async function swapSingleFace(ctx, sourceFace, targetFace, sourceImgParam) {
+        const sourceLandmarks = sourceFace.landmarks;
+        const targetLandmarks = targetFace.landmarks;
+        const sourceContour = [...sourceLandmarks.getLeftEyeBrow(), ...sourceLandmarks.getRightEyeBrow().reverse(), ...sourceLandmarks.getJawOutline().reverse()];
+        const { x, y, width, height } = sourceFace.detection.box;
+
+        const sourceFaceCanvas = document.createElement('canvas');
+        sourceFaceCanvas.width = width; sourceFaceCanvas.height = height;
+        const sourceFaceCtx = sourceFaceCanvas.getContext('2d');
+        sourceFaceCtx.drawImage(sourceImgParam, x, y, width, height, 0, 0, width, height);
+
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = width; maskCanvas.height = height;
+        const maskCtx = maskCanvas.getContext('2d');
+        maskCtx.fillStyle = 'white';
+        maskCtx.beginPath();
+        maskCtx.moveTo(sourceContour[0].x - x, sourceContour[0].y - y);
+        sourceContour.forEach(p => maskCtx.lineTo(p.x - x, p.y - y));
+        maskCtx.closePath();
+        maskCtx.fill();
+        sourceFaceCtx.globalCompositeOperation = 'destination-in';
+        sourceFaceCtx.drawImage(maskCanvas, 0, 0);
+
+        const targetBox = targetFace.detection.box;
+        const scaleWidth = targetBox.width * 1.1;
+        const scaleHeight = targetBox.height * 1.1;
+        const targetCenterX = targetBox.x + targetBox.width / 2;
+        const targetCenterY = targetBox.y + targetBox.height / 2;
+        const angle = Math.atan2(targetLandmarks.getRightEye()[3].y - targetLandmarks.getLeftEye()[0].y, targetLandmarks.getRightEye()[3].x - targetLandmarks.getLeftEye()[0].x);
+
+        ctx.save();
+        ctx.translate(targetCenterX, targetCenterY);
+        ctx.rotate(angle);
+        ctx.drawImage(sourceFaceCanvas, -scaleWidth / 2, -scaleHeight / 2, scaleWidth, scaleHeight);
+        ctx.restore();
+    }
+    
+    function showResult() {
+        resultArea.classList.remove('hidden');
+        downloadBtn.href = outputCanvas.toDataURL('image/png');
+        downloadBtn.download = 'hasil-swap-studio.png';
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }
+
+    function showLoading(message) {
+        loadingText.textContent = message;
+        loadingScreen.classList.remove('hidden');
+        loadingScreen.classList.add('flex');
+    }
+
+    function hideLoading() {
+        loadingScreen.classList.add('hidden');
+        loadingScreen.classList.remove('flex');
+    }
+
+    function showError(message) {
+        errorMessage.textContent = "Error: " + message;
+        errorMessage.classList.remove('hidden');
+    }
+    
+    function hideError() {
+        errorMessage.classList.add('hidden');
+    }
+    
+    resetApp();
+    </script>
+</body>
+</html>
